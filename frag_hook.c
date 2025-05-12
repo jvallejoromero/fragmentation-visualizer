@@ -72,6 +72,7 @@ void* malloc(size_t size) {
     void* p = real_malloc(size);
     pthread_mutex_lock(&lock);
       record_alloc(p, size);
+      dump_layout();
     pthread_mutex_unlock(&lock);
     return p;
 }

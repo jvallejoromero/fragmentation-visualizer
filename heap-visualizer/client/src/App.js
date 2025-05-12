@@ -6,6 +6,7 @@ import {
   XAxis, Tooltip, LabelList, Cell, YAxis
 } from 'recharts';
 import Slider from "@mui/material/Slider";
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const socket = io('http://10.173.60.41:3001');
 
@@ -27,36 +28,58 @@ function App() {
 
   /** @type {[Frame[], React.Dispatch<Frame[]>]} */
   const [history, setHistory] = useState([]);
-
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(null);
-
-
+  
   useEffect(() => {
+    const handleSnapshot = ({snapshotId, chunks}) => {
+
+      // reset selected frame if new process
+      if (snapshotId === 1) {
+        setHistory([]);
+        setSelectedFrameIndex(null);
+      }
+
+      setCurrent(chunks);
+      setHistory((h) => {
+        // h is the previous Frame[] array 
+        return [...h, chunks];
+      });
+    }
     socket.on('connect', () => console.log('⚡ socket connected:', socket.id));
     socket.on('connect_error', err => console.error('❌ connect_error:', err));
-    socket.on('snapshot', data => {
-      // data = [{size, allocated}, ...]
-      console.log('got snapshot:', data);
-      // setChunks(data);
-      setCurrent(data);
-      setHistory((h) => {
-        // h is the previous Frame[] array
-        return [...h, data];
-      });
+    socket.on('snapshot', handleSnapshot);
 
-      // compute metrics
-      const free = data.filter(c => !c.allocated).map(c => c.size);
-      const totalFree = free.reduce((a,b) => a+b, 0);
-      const largest = free.length ? Math.max(...free) : 0;
-      const frag = totalFree > 0 ? (1 - (largest/totalFree)) : 0;
-      const heapSize = data.reduce((sum, chunk) => sum + chunk.size, 0);
-      
-      setMetrics({holes: free.length, frag, totalFree, heapSize});
-    });
+    return () => {
+      socket.off('snapshot', handleSnapshot);
+    };
   }, []);
 
+
+  // update chart when selectedFrameIndex or history changes
+  useEffect(() => {
+    if (selectedFrameIndex === null) {
+      // show the latest
+      setCurrent(history[history.length - 1] || []);
+    } else {
+      setCurrent(history[selectedFrameIndex]);
+    }
+  }, [selectedFrameIndex]);
+
   // decide which frame to show
-  const displayFrame = selectedFrameIndex === null ? current : history[selectedFrameIndex]
+  const displayFrame = selectedFrameIndex === null ? current : history[selectedFrameIndex];
+  const displayIndex = selectedFrameIndex ?? (history.length - 1); 
+
+  // compute metrics when displayFrame changes
+  useEffect(() => {
+    const free = displayFrame.filter(c => !c.allocated).map(c => c.size);
+    const totalFree = free.reduce((a,b) => a+b, 0);
+    const largest = free.length ? Math.max(...free) : 0;
+    const frag = totalFree > 0 ? (1 - (largest/totalFree)) : 0;
+    const heapSize = displayFrame.reduce((sum, chunk) => sum + chunk.size, 0);
+
+    setMetrics({holes: free.length, frag, totalFree, heapSize});
+  }, [displayFrame]);
+
 
   // build chart data
   let pos = 0;
@@ -66,11 +89,15 @@ function App() {
     return entry;    
   });
 
+  const disableBack = history.length === 0 || displayIndex <= 0;
+  const disableForward = history.length === 0 || displayIndex >= history.length - 1;
 
+
+  // set end index when chartData changes
   useEffect(() => {
     if (!chartData) return;
     setEndIndex(chartData.length);
-  }, [current]);
+  }, [current, chartData]);
   
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(chartData?.length);
@@ -100,32 +127,42 @@ function App() {
 
         <div style={styles.fragDiv}>
 
-        {/* <button
-          onClick={() => {
-            setSelectedFrameIndex(idx => {
-              console.log("index: ", idx);
-              if (idx === null) return history.length - 1
-              return Math.max(0, idx - 1)
-            });
-            setCurrent(selectedFrameIndex);
-            console.log("hist:", history[selectedFrameIndex]);
-          }}
-        >
-          Back
-        </button>
-        <button
-          onClick={() => {
-            setSelectedFrameIndex(idx => {
-              if (idx === null) return null
-              return Math.min(history.length - 1, idx + 1)
-            })
-            setCurrent(selectedFrameIndex);
-            console.log("hist:", history[selectedFrameIndex]);
-          }}
-        >
-          Forward
-        </button> */}
+          <div style={styles.chartButtonLeft}>
+            <button
+              disabled={disableBack}
+              onClick={() => {
+                setSelectedFrameIndex(idx => {
+                  console.log("index: ", idx);
+                  if (idx === null) return history.length - 2;
+                  return Math.max(0, idx - 1);
+                });
+              }}
+              aria-label="Back"
+              className="nav-button"
+            >
+              <ChevronLeft size={28} />
+            </button>
+          </div>
 
+          <div style={styles.chartButtonRight}>
+            <button
+              disabled={disableForward}
+              onClick={() => {
+                setSelectedFrameIndex(idx => {
+                  console.log("index: ", idx);
+                  if (idx !== null) {
+                    return Math.min(history.length - 1, idx + 1);
+                  }
+                  return null;
+                })
+              }}
+              aria-label="Forward"
+              className="nav-button"
+            >
+              <ChevronRight size={28} />
+            </button>
+          </div>
+        
           <div style={styles.contentSubtitle}>Fragmentation</div>
           <p style={{color: 'white', textAlign: 'center', fontSize: 12}}>Holes: {metrics.holes} | Fragmentation: {(metrics.frag*100).toFixed(1)}%</p>
           <p style={{color: 'white', textAlign: 'center', fontSize: 12}}>Total Free: {metrics.totalFree <= 0 ? 0 : metrics.totalFree}/{metrics.heapSize <= 0 ? 0 : metrics.heapSize} bytes</p>
@@ -236,7 +273,7 @@ export default App;
     justifyContent: "space-between",
   },
   headerSubtitle: {
-    fontSize: 22,
+    fontSize: 20,
     color: "#f1f1f1",
   },
   headerLeft: {
@@ -266,14 +303,27 @@ export default App;
   fragDiv: {
     flex: 1,
     padding: 24,
+    position: 'relative',
   }, 
   memDiv: {
     flex: 1,
     padding: 24,
+    position: 'relative',
   },
   sliderContainer: {
     paddingTop: 12,
     paddingLeft: 24,
     paddingRight: 24,
+    backgroundColor: 'blue',
+  },
+  chartButtonLeft: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+  },
+  chartButtonRight: {
+    position: 'absolute',
+    top: "50%",
+    right: 0,
   },
  }
