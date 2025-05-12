@@ -156,11 +156,11 @@ function App() {
                   return [value, name];
                 }}
               />
-                {/* invisible bar just so Tooltip sees `allocated` */}
+              {/* invisible bar just so Tooltip sees `allocated` */}
               <Bar dataKey="allocated" fill="transparent" />
               <Bar 
                 dataKey="width" 
-                isAnimationActive={false}
+                isAnimationActive={true}
               >
                 <LabelList 
                   dataKey="allocated" 
