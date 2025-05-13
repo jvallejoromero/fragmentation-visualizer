@@ -98,7 +98,7 @@ function App() {
   useEffect(() => {
     if (!chartData) return;
     setEndIndex(chartData.length);
-  }, [current, chartData]);
+  }, [chartData.length]);
   
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(chartData?.length);
@@ -353,7 +353,6 @@ export default App;
     paddingTop: 12,
     paddingLeft: 24,
     paddingRight: 24,
-    backgroundColor: 'blue',
   },
   chartButtonLeft: {
     position: 'absolute',

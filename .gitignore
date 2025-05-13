@@ -1,3 +1,6 @@
 # Ignore these folders
 /labs/
 /.vscode/
+
+# ignore this file
+heap_frag.log
