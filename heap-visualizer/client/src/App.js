@@ -3,7 +3,8 @@ import React, {useState, useEffect} from 'react';
 import {io} from 'socket.io-client';
 import {
   ResponsiveContainer, BarChart, Bar,
-  XAxis, Tooltip, LabelList, Cell, YAxis
+  XAxis, Tooltip, LabelList, Cell, YAxis,
+  LineChart, CartesianGrid, Legend, Line,
 } from 'recharts';
 import Slider from "@mui/material/Slider";
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -121,95 +122,133 @@ function App() {
       {/* Content */}
       <div style={styles.content}>
         <div style={styles.memDiv}>
-          <div style={styles.contentSubtitle}>Memory</div>
-          <p style={{color: 'white', textAlign: 'center', fontSize: 12}}>Utilization:</p>
+          <div style={styles.contentSubtitle}>System Calls</div>
+          <p style={{ color: 'white', textAlign: 'center', fontSize: 12, paddingBottom: 50 }}>malloc/free over time</p>
+          
+          {(chartData.length > 0) ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={{}}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="time" tick={{ fontSize: 10 }} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Line
+                  type="monotone"
+                  dataKey="allocs"
+                  name="Allocations"
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="frees"
+                  name="Deallocations"
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+              <div style={{ color: 'white', fontSize: 14, textAlign: 'center' }}>
+                Waiting for data…
+              </div>
+          )}
         </div>
 
         <div style={styles.fragDiv}>
 
-          <div style={styles.chartButtonLeft}>
-            <button
-              disabled={disableBack}
-              onClick={() => {
-                setSelectedFrameIndex(idx => {
-                  console.log("index: ", idx);
-                  if (idx === null) return history.length - 2;
-                  return Math.max(0, idx - 1);
-                });
-              }}
-              aria-label="Back"
-              className="nav-button"
-            >
-              <ChevronLeft size={28} />
-            </button>
-          </div>
+          {!disableBack && (
+            <div style={styles.chartButtonLeft}>
+              <button
+                disabled={disableBack}
+                onClick={() => {
+                  setSelectedFrameIndex(idx => {
+                    console.log("index: ", idx);
+                    if (idx === null) return history.length - 2;
+                    return Math.max(0, idx - 1);
+                  });
+                }}
+                aria-label="Back"
+                className="nav-button"
+              >
+                <ChevronLeft size={28} />
+              </button>
+            </div>
+          )}
 
-          <div style={styles.chartButtonRight}>
-            <button
-              disabled={disableForward}
-              onClick={() => {
-                setSelectedFrameIndex(idx => {
-                  console.log("index: ", idx);
-                  if (idx !== null) {
-                    return Math.min(history.length - 1, idx + 1);
-                  }
-                  return null;
-                })
-              }}
-              aria-label="Forward"
-              className="nav-button"
-            >
-              <ChevronRight size={28} />
-            </button>
-          </div>
+          {!disableForward && (
+            <div style={styles.chartButtonRight}>
+              <button
+                disabled={disableForward}
+                onClick={() => {
+                  setSelectedFrameIndex(idx => {
+                    console.log("index: ", idx);
+                    if (idx !== null) {
+                      return Math.min(history.length - 1, idx + 1);
+                    }
+                    return null;
+                  })
+                }}
+                aria-label="Forward"
+                className="nav-button"
+              >
+                <ChevronRight size={28} />
+              </button>
+            </div>
+          )}
         
           <div style={styles.contentSubtitle}>Fragmentation</div>
           <p style={{color: 'white', textAlign: 'center', fontSize: 12}}>Holes: {metrics.holes} | Fragmentation: {(metrics.frag*100).toFixed(1)}%</p>
           <p style={{color: 'white', textAlign: 'center', fontSize: 12}}>Total Free: {metrics.totalFree <= 0 ? 0 : metrics.totalFree}/{metrics.heapSize <= 0 ? 0 : metrics.heapSize} bytes</p>
           
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart 
-              data={chartData.slice(startIndex, endIndex)} 
-              layout="horizontal"
-            >
-              <YAxis
-                type="number"
-                domain={[0, 'dataMax * 0.95']}
-                hide
-              />
-              <XAxis dataKey="x" hide />
-              <Tooltip 
-                itemStyle={{ 
-                  color: "#000" 
-                }}
-                labelFormatter={() => ''}
-                formatter={(value, name) => {
-                  if (name === 'width') {
-                    return [`Size: ${value}`, null];
-                  }
-                  if (name === 'allocated') {
-                    return [value ? 'Allocated' : 'Free', null];
-                  }
-                  return [value, name];
-                }}
-              />
-              {/* invisible bar just so Tooltip sees `allocated` */}
-              <Bar dataKey="allocated" fill="transparent" />
-              <Bar 
-                dataKey="width" 
-                isAnimationActive={true}
+          {(chartData.length) > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart
+                data={chartData.slice(startIndex, endIndex)}
+                layout="horizontal"
               >
-                <LabelList 
-                  dataKey="allocated" 
-                  position="insideTop"
-                  formatter={v => v ? '█' : ' '} 
+                <YAxis
+                  type="number"
+                  domain={[0, 'dataMax * 0.95']}
+                  hide
                 />
-                {chartData.map((entry, idx) => (
-                  <Cell key={idx} fill={entry.allocated ? 'red' : 'lime'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                <XAxis dataKey="x" hide />
+                <Tooltip
+                  itemStyle={{
+                    color: "#000"
+                  }}
+                  labelFormatter={() => ''}
+                  formatter={(value, name) => {
+                    if (name === 'width') {
+                      return [`Size: ${value}`, null];
+                    }
+                    if (name === 'allocated') {
+                      return [value ? 'Allocated' : 'Free', null];
+                    }
+                    return [value, name];
+                  }}
+                />
+
+                {/* invisible bar just so Tooltip sees `allocated` */}
+                <Bar dataKey="allocated" fill="transparent" />
+                <Bar
+                  dataKey="width"
+                  isAnimationActive={true}
+                >
+                  <LabelList
+                    dataKey="allocated"
+                    position="insideTop"
+                    formatter={v => v ? '█' : ' '}
+                  />
+                  {chartData.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.allocated ? 'red' : 'lime'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+              <div style={{ color: 'white', fontSize: 14, paddingTop: 25, textAlign: 'center' }}>
+                Waiting for data…
+              </div>
+          )}
           {chartData?.length > 30 && (
             <div style={styles.sliderContainer}>
               <Slider
