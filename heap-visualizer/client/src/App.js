@@ -1,10 +1,10 @@
 import './App.css';
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {io} from 'socket.io-client';
 import {
   ResponsiveContainer, BarChart, Bar,
   XAxis, Tooltip, LabelList, Cell, YAxis,
-  LineChart, CartesianGrid, Legend, Line,
+  LineChart, CartesianGrid, Line,
 } from 'recharts';
 import Slider from "@mui/material/Slider";
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -19,8 +19,18 @@ const socket = io('http://10.173.60.41:3001');
  * @typedef {Chunk[]} Frame
  */
 
+function useIsMobile(breakpoint = 600) {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < breakpoint);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [breakpoint]);
+  return isMobile;
+}
 
 function App() {
+  const isMobile = useIsMobile(600);
 
   const [metrics, setMetrics] = useState({ holes:0, frag:0, totalFree: 0, heapSize: 0 });
 
@@ -30,17 +40,33 @@ function App() {
   /** @type {[Frame[], React.Dispatch<Frame[]>]} */
   const [history, setHistory] = useState([]);
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(null);
-  
-  useEffect(() => {
-    const handleSnapshot = ({snapshotId, chunks}) => {
 
+  const [syscallsHistory, setSyscallsHistory] = useState([]);  
+
+  useEffect(() => {
+    const handleSyscalls = ({snapshotId, allocs, frees}) => {
+      const time = new Date().toLocaleTimeString();
+      const newPoint = {time, allocs, frees}
+      console.log("snap id", snapshotId)
+      if (snapshotId === 1) {
+        setSyscallsHistory([newPoint]);
+      } else {
+        setSyscallsHistory((old) => {
+          const next = [...old, newPoint];
+          return next.length > 300 ? next.slice(-300) : next;
+        });
+      }
+    }
+
+    const handleSnapshot = ({snapshotId, chunks}) => {
       // reset selected frame if new process
       if (snapshotId === 1) {
         setHistory([]);
         setSelectedFrameIndex(null);
+        console.log('reset');
       }
 
-      setCurrent(chunks);
+      setCurrent(chunks);  
       setHistory((h) => {
         // h is the previous Frame[] array 
         return [...h, chunks];
@@ -49,9 +75,11 @@ function App() {
     socket.on('connect', () => console.log('⚡ socket connected:', socket.id));
     socket.on('connect_error', err => console.error('❌ connect_error:', err));
     socket.on('snapshot', handleSnapshot);
+    socket.on('syscalls', handleSyscalls);
 
     return () => {
       socket.off('snapshot', handleSnapshot);
+      socket.off('syscalls', handleSyscalls);
     };
   }, []);
 
@@ -120,28 +148,53 @@ function App() {
       </div>
 
       {/* Content */}
-      <div style={styles.content}>
+      <div 
+        style={{
+          ...styles.content,
+          flexDirection: isMobile ? 'column' : 'row'
+        }}
+      >
         <div style={styles.memDiv}>
           <div style={styles.contentSubtitle}>System Calls</div>
           <p style={{ color: 'white', textAlign: 'center', fontSize: 12, paddingBottom: 50 }}>malloc/free over time</p>
           
           {(chartData.length > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={{}}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
+              <LineChart data={syscallsHistory}>
+                <CartesianGrid 
+                  stroke='white'
+                  strokeDasharray="3 3" 
+                />
+                <XAxis 
+                  dataKey="time" 
+                  axisLine={{ stroke: 'white' }}
+                  tick={{ fill: 'white', fontSize: 10 }} 
+                  tickLine={true}
+                />
+                <YAxis 
+                  allowDecimals={false} 
+                  axisLine={{ stroke: 'white' }}
+                  tick={{ fill: 'white' }} 
+                />
+                <Tooltip 
+                  itemStyle={{
+                    color: "#000"
+                  }}
+                />
                 <Line
                   type="monotone"
                   dataKey="allocs"
                   name="Allocations"
+                  stroke="red"
+                  strokeWidth={1}
                   dot={false}
                 />
                 <Line
                   type="monotone"
                   dataKey="frees"
                   name="Deallocations"
+                  stroke="lime"
+                  strokeWidth={1}
                   dot={false}
                 />
               </LineChart>
@@ -330,7 +383,6 @@ export default App;
     paddingTop: 25,
     display: 'flex',
     flex: 1,
-    flexDirection: 'row',
     alignItems: "stretch",
     justifyContent: 'space-evenly',
   },

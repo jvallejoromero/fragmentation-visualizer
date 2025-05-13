@@ -53,10 +53,15 @@ static void record_free(void* p) {
 static void dump_layout() {
 
     int flags = O_WRONLY|O_CREAT | (firstRun ? O_TRUNC : O_APPEND);
-    firstRun = false;
-
     int fd = open("heap_frag.log", flags, 0644);
     if (fd < 0) return;
+
+    if (firstRun) {
+        char hdr[64];
+        int n = snprintf(hdr, sizeof(hdr), "&PID=%d\n\n", getpid());
+        write(fd, hdr, n);
+        firstRun = false;
+    }
 
     char buf[128];
     for (chunk_t* c = head; c; c = c->next) {

@@ -25,8 +25,14 @@ io.on('connection', socket => {
 });
 
 let buffer = '';
-let snapshots = [];
 let delayed = false;
+
+let prevState = new Map();
+let allocs = 0;
+let frees = 0;
+let snapshotCounter = 0;
+let sentSnapshots = 0;
+let lastPID = 0;
 
 const FRAME_MS = 150;
 
@@ -37,30 +43,58 @@ chokidar.watch(LOG_PATH, { awaitWriteFinish: true })
 
     // Read entire log, split on blank lines
     const data = fs.readFileSync(LOG_PATH,'utf8');
-    snapshots = data.trim().split(/\n\s*\n/);
+
+    const match = data.match(/^&PID=(\d+)/m);
+    const pid = match ? match[1] : null;
+
+    // detect new process run
+    console.log("From pid:", pid); 
+    if (pid !== null && lastPID != pid) {
+      sentSnapshots = 0;
+      snapshotCounter = 0;
+      prevState.clear();
+      allocs = 0;
+      frees = 0;
+    }
+
+    const snapshots = data.trim().split(/\n\s*\n/);
+    const newSnaps = snapshots.slice(sentSnapshots);
+    const baseIndex = sentSnapshots; 
 
     if (snapshots.length >= 30) {
       delayed = true;
     }
 
-    let snapshotCounter = 0;
-
-    snapshots.forEach((snap, i) => {
+    newSnaps.forEach((snap, i) => {
         // schedule each emit i*FRAME_MS ms in the future
         setTimeout(() => {
           snapshotCounter += 1;
 
+          // parse chunks
           const lines = snap.split('\n');
-          const chunks = lines.map(line => {
-            const [, size, alloc] = line.trim().split(/\s+/);
-            return { size: +size, allocated: +alloc === 1 };
+          const chunks = lines.filter(line => !line.startsWith('&')).map(line => {
+            const [addr, size, alloc] = line.trim().split(/\s+/);
+            return {addr, size: +size, allocated: +alloc === 1 };
           });
 
-          // console.log("sending snapshot..");
-          io.emit('snapshot', {snapshotId: snapshotCounter, chunks});
+          // update alloc/free counts
+          chunks.forEach(({ addr, allocated }) => {
+            if (!prevState.has(addr)) {
+              if (allocated) allocs++;
+            } else {
+              const old = prevState.get(addr);
+              if (!old && allocated) allocs++;
+              if (old && !allocated) frees++;
+            }
+            prevState.set(addr, allocated);
+          });
+
+          io.emit('snapshot', {pid: Number(pid), snapshotId: snapshotCounter, chunks});
+          io.emit('syscalls', {pid: Number(pid), snapshotId: snapshotCounter, allocs, frees});
         }, (delayed ? i * FRAME_MS : 0));
       });
       delayed = false;
+      sentSnapshots = snapshots.length;
   });
 
 app.listen(3001, () => console.log('📡 WS server listening on 3001'));
