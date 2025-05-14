@@ -112,7 +112,7 @@ void free(void* ptr) {
     record_free(ptr);
     dump_layout(false);
 
-    int coalesced = coalesce_free_chunks();
+    int coalesced = 0;
     if (coalesced == 1) {
         dump_layout(true);
     }

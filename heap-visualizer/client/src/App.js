@@ -377,7 +377,7 @@ function App() {
                     p: 0,
                   }}
                 />
-                <span style={{ color: 'white', fontSize: 14, paddingLeft: 5 }}>Show coalesced</span>
+                <span style={{ color: 'white', fontSize: 14, paddingLeft: 5 }}>Coalescing</span>
               </div>
             </div>
             )}
@@ -464,5 +464,6 @@ export default App;
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingTop: 5,
   }
  }

@@ -16,6 +16,25 @@ console.log('Watching:', LOG_PATH);
 const app = http.createServer();
 const io  = new Server(app, { cors: { origin: '*' } });
 
+const mergeAdjacentFreeBlocks = (chunks) => {
+  const merged = chunks.slice();
+  for (let i = 0; i < merged.length - 1;) {
+    const curr = merged[i];
+    const next = merged[i + 1];
+
+    // both must be free, and physically contiguous
+    if (!curr.allocated && !next.allocated) {
+      // merge next INTO curr
+      curr.size += next.size;
+      // drop the next entry
+      merged.splice(i + 1, 1);
+    } else {
+      i++;
+    }
+  }
+  return merged;
+}
+
 io.on('connection', socket => {
     console.log('👤 Client connected:', socket.id);
 
@@ -60,7 +79,6 @@ chokidar.watch(LOG_PATH, { awaitWriteFinish: true })
 
     const snapshots = data.trim().split(/\n\s*\n/);
     const newSnaps = snapshots.slice(sentSnapshots);
-    const baseIndex = sentSnapshots; 
 
     if (snapshots.length >= 30) {
       delayed = true;
@@ -94,9 +112,15 @@ chokidar.watch(LOG_PATH, { awaitWriteFinish: true })
             prevState.set(addr, allocated);
           });
 
-          console.log("coalesced=", coalesced)
-          io.emit('snapshot', {pid: Number(pid), snapshotId: snapshotCounter, chunks, coalesced});
+          io.emit('snapshot', {pid: Number(pid), snapshotId: snapshotCounter, chunks, coalesced: false});
           io.emit('syscalls', {pid: Number(pid), snapshotId: snapshotCounter, allocs, frees});
+
+          const isLastSnapshot = (snapshotCounter === snapshots.length);
+          if (isLastSnapshot) {
+            const merged = mergeAdjacentFreeBlocks(chunks);
+            io.emit('snapshot', {pid: Number(pid), snapshotId: (snapshotCounter + 0.5), chunks: merged, coalesced: true});
+          }
+
         }, (delayed ? i * FRAME_MS : 0));
       });
       delayed = false;
