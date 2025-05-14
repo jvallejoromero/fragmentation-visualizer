@@ -20,7 +20,7 @@ int main(void) {
 
     for (int i = 0; i < NUM_SLOTS; i++) {
         slots[i] = malloc(25);
-        sizes[i] = 25;
+        sizes[i] = 25; 
     }
 
     sleep(INTERVAL);

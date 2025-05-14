@@ -1,5 +1,14 @@
 {
     "files.associations": {
         "string.h": "c"
+    },
+    "emeraldwalk.runonsave": {
+        "commands": [
+        {
+          "match": ".*\\.c$",
+          "cmd": "bash -c 'gcc \"$1\" -o \"${1%.c}\"' -- \"${file}\"",
+          "silent": false
+        }
+      ]
     }
 }

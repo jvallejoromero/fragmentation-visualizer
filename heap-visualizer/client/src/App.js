@@ -4,7 +4,7 @@ import {io} from 'socket.io-client';
 import {
   ResponsiveContainer, BarChart, Bar,
   XAxis, Tooltip, LabelList, Cell, YAxis,
-  LineChart, CartesianGrid, Line,
+  LineChart, CartesianGrid, Line, Legend,
 } from 'recharts';
 import Slider from "@mui/material/Slider";
 import Checkbox from "@mui/material/Checkbox"
@@ -42,9 +42,6 @@ function App() {
 
   const [metrics, setMetrics] = useState({ holes:0, frag:0, totalFree: 0, heapSize: 0 });
 
-  /** @type {[Frame, React.Dispatch<Frame>]} */
-  const [current, setCurrent] = useState(EMPTY_FRAME);
-
   /** @type {[Frame[], React.Dispatch<Frame[]>]} */
   const [history, setHistory] = useState([]);
 
@@ -78,7 +75,6 @@ function App() {
         console.log('reset');
       }
 
-      setCurrent(chunks);  
       setHistory((h) => {
         // h is the previous Frame[] array
         const frame = {chunks, coalesced};
@@ -171,31 +167,36 @@ function App() {
         }}
       >
         <div style={styles.memDiv}>
-          <div style={styles.contentSubtitle}>System Calls</div>
-          <p style={{ color: 'white', textAlign: 'center', fontSize: 12, paddingBottom: 50 }}>malloc/free over time</p>
+          <div style={{...styles.contentSubtitle, paddingTop: 1}}>System Calls</div>
+          <p style={{ color: 'white', textAlign: 'center', fontSize: 12, paddingBottom: 50 }}>malloc() and free() calls over time</p>
           
           {(chartData.length > 0) ? (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={syscallsHistory}>
-                <CartesianGrid 
+                <CartesianGrid
                   stroke='white'
-                  strokeDasharray="3 3" 
+                  strokeDasharray="3 3"
                 />
-                <XAxis 
-                  dataKey="time" 
+                <XAxis
+                  dataKey="time"
                   axisLine={{ stroke: 'white' }}
-                  tick={{ fill: 'white', fontSize: 10 }} 
+                  tick={{ fill: 'white', fontSize: 10 }}
                   tickLine={true}
                 />
-                <YAxis 
-                  allowDecimals={false} 
+                <YAxis
+                  allowDecimals={false}
                   axisLine={{ stroke: 'white' }}
-                  tick={{ fill: 'white' }} 
+                  tick={{ fill: 'white' }}
                 />
-                <Tooltip 
+                <Tooltip
                   itemStyle={{
                     color: "#000"
                   }}
+                />
+                <Legend
+                  iconType="square"      
+                  iconSize={12}           
+                  formatter={(value) => <span style={{ fontSize: '0.85rem', color: 'white' }}>{value}</span>}
                 />
                 <Line
                   type="monotone"
@@ -354,7 +355,7 @@ function App() {
                 />
               </div>
             )}
-            {chartData?.length && (
+            {chartData?.length > 0 && (
             <div style={styles.checkBoxContainer}>
               <div>
                 <Checkbox
@@ -436,12 +437,12 @@ export default App;
   },
   fragDiv: {
     flex: 1,
-    padding: 24,
+    padding: 28,
     position: 'relative',
   }, 
   memDiv: {
     flex: 1,
-    padding: 24,
+    padding: 28,
     position: 'relative',
   },
   sliderContainer: {
@@ -465,5 +466,5 @@ export default App;
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 5,
-  }
+  },
  }

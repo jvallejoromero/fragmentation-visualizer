@@ -33,7 +33,7 @@ int main(void) {
 
     printf("All %d allocations complete. Proceeding to free...\n", NUM_PTRS);
 
-    // Free all pointers
+    // Free all pointers 
     for (int i = 0; i < NUM_PTRS; i++) {
         free(ptrs[i]);
         printf("[Free ] index %d freed\n", i);
