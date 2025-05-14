@@ -1,5 +1,5 @@
 import './App.css';
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect} from 'react';
 import {io} from 'socket.io-client';
 import {
   ResponsiveContainer, BarChart, Bar,
@@ -7,6 +7,7 @@ import {
   LineChart, CartesianGrid, Line,
 } from 'recharts';
 import Slider from "@mui/material/Slider";
+import Checkbox from "@mui/material/Checkbox"
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const socket = io('http://10.173.60.41:3001');
@@ -16,7 +17,13 @@ const socket = io('http://10.173.60.41:3001');
  * @property {number} size
  * @property {boolean} allocated
  *
- * @typedef {Chunk[]} Frame
+ */
+
+/**
+ * @typedef Frame
+ * @type {object}
+ * @property {Chunk[]} chunks
+ * @property {boolean} coalesced
  */
 
 function useIsMobile(breakpoint = 600) {
@@ -31,17 +38,22 @@ function useIsMobile(breakpoint = 600) {
 
 function App() {
   const isMobile = useIsMobile(600);
+  const EMPTY_FRAME = { chunks: [], coalesced: false };
 
   const [metrics, setMetrics] = useState({ holes:0, frag:0, totalFree: 0, heapSize: 0 });
 
   /** @type {[Frame, React.Dispatch<Frame>]} */
-  const [current, setCurrent] = useState([]);
+  const [current, setCurrent] = useState(EMPTY_FRAME);
 
   /** @type {[Frame[], React.Dispatch<Frame[]>]} */
   const [history, setHistory] = useState([]);
+
   const [selectedFrameIndex, setSelectedFrameIndex] = useState(null);
+  const [showCoalesced, setShowCoalesced] = useState(true);
 
   const [syscallsHistory, setSyscallsHistory] = useState([]);  
+
+  const visibleHistory = showCoalesced ? history : history.filter(h => !h.coalesced);
 
   useEffect(() => {
     const handleSyscalls = ({snapshotId, allocs, frees}) => {
@@ -58,7 +70,7 @@ function App() {
       }
     }
 
-    const handleSnapshot = ({snapshotId, chunks}) => {
+    const handleSnapshot = ({snapshotId, chunks, coalesced}) => {
       // reset selected frame if new process
       if (snapshotId === 1) {
         setHistory([]);
@@ -68,8 +80,10 @@ function App() {
 
       setCurrent(chunks);  
       setHistory((h) => {
-        // h is the previous Frame[] array 
-        return [...h, chunks];
+        // h is the previous Frame[] array
+        const frame = {chunks, coalesced};
+        console.log(frame);
+        return [...h, frame];
       });
     }
     socket.on('connect', () => console.log('⚡ socket connected:', socket.id));
@@ -80,46 +94,47 @@ function App() {
     return () => {
       socket.off('snapshot', handleSnapshot);
       socket.off('syscalls', handleSyscalls);
-    };
+    }
   }, []);
 
 
   // update chart when selectedFrameIndex or history changes
-  useEffect(() => {
-    if (selectedFrameIndex === null) {
-      // show the latest
-      setCurrent(history[history.length - 1] || []);
-    } else {
-      setCurrent(history[selectedFrameIndex]);
-    }
-  }, [selectedFrameIndex]);
+  // useEffect(() => {
+  //   if (selectedFrameIndex === null) {
+  //     // show the latest
+  //     setCurrent(visibleHistory[visibleHistory.length - 1] || EMPTY_FRAME);
+  //   } else {
+  //     setCurrent(visibleHistory[selectedFrameIndex]);
+  //   }
+  // }, [visibleHistory, selectedFrameIndex]);
 
   // decide which frame to show
-  const displayFrame = selectedFrameIndex === null ? current : history[selectedFrameIndex];
-  const displayIndex = selectedFrameIndex ?? (history.length - 1); 
+  const displayFrame = selectedFrameIndex === null ? visibleHistory[visibleHistory.length - 1] || EMPTY_FRAME : visibleHistory[selectedFrameIndex] || EMPTY_FRAME;
+  const displayIndex = selectedFrameIndex ?? (visibleHistory.length - 1); 
 
   // compute metrics when displayFrame changes
   useEffect(() => {
-    const free = displayFrame.filter(c => !c.allocated).map(c => c.size);
+    if (!displayFrame.chunks.length) return;
+
+    const free = displayFrame.chunks.filter(c => !c.allocated).map(c => c.size);
     const totalFree = free.reduce((a,b) => a+b, 0);
     const largest = free.length ? Math.max(...free) : 0;
     const frag = totalFree > 0 ? (1 - (largest/totalFree)) : 0;
-    const heapSize = displayFrame.reduce((sum, chunk) => sum + chunk.size, 0);
-
+    const heapSize = displayFrame.chunks.reduce((sum, chunk) => sum + chunk.size, 0);
     setMetrics({holes: free.length, frag, totalFree, heapSize});
-  }, [displayFrame]);
+  }, [displayFrame.chunks]);
 
 
   // build chart data
   let pos = 0;
-  const chartData = displayFrame.map((chunk, index) => {
+  const chartData = displayFrame.chunks.map((chunk, index) => {
     const entry = {x: pos, width: chunk.size, allocated: chunk.allocated};
     pos += chunk.size;
     return entry;    
   });
 
-  const disableBack = history.length === 0 || displayIndex <= 0;
-  const disableForward = history.length === 0 || displayIndex >= history.length - 1;
+  const disableBack = visibleHistory.length === 0 || displayIndex <= 1;
+  const disableForward = visibleHistory.length === 0 || displayIndex >= visibleHistory.length - 1;
 
 
   // set end index when chartData changes
@@ -127,6 +142,7 @@ function App() {
     if (!chartData) return;
     setEndIndex(chartData.length);
   }, [chartData.length]);
+
   
   const [startIndex, setStartIndex] = useState(0);
   const [endIndex, setEndIndex] = useState(chartData?.length);
@@ -213,10 +229,11 @@ function App() {
               <button
                 disabled={disableBack}
                 onClick={() => {
-                  setSelectedFrameIndex(idx => {
-                    console.log("index: ", idx);
-                    if (idx === null) return history.length - 2;
-                    return Math.max(0, idx - 1);
+                  setSelectedFrameIndex(prev => {
+                    const last = visibleHistory.length - 1;
+                    const curr = prev === null ? last : prev;
+                    const next = Math.max(0, curr - 1);
+                    return next;
                   });
                 }}
                 aria-label="Back"
@@ -233,9 +250,8 @@ function App() {
                 disabled={disableForward}
                 onClick={() => {
                   setSelectedFrameIndex(idx => {
-                    console.log("index: ", idx);
                     if (idx !== null) {
-                      return Math.min(history.length - 1, idx + 1);
+                      return Math.min(visibleHistory.length - 1, idx + 1);
                     }
                     return null;
                   })
@@ -338,6 +354,33 @@ function App() {
                 />
               </div>
             )}
+            {chartData?.length && (
+            <div style={styles.checkBoxContainer}>
+              <div>
+                <Checkbox
+                  checked={showCoalesced}
+                  onChange={e => {
+                    setShowCoalesced(e.target.checked);
+                    setSelectedFrameIndex(null);
+                  }}
+                  sx={{
+                    // unchecked color
+                    color: 'white',
+                    // checked color
+                    '&.Mui-checked': {
+                      color: 'white',
+                    },
+                    // size of the SvgIcon
+                    '& .MuiSvgIcon-root': {
+                      fontSize: 18,
+                    },
+                    p: 0,
+                  }}
+                />
+                <span style={{ color: 'white', fontSize: 14, paddingLeft: 5 }}>Show coalesced</span>
+              </div>
+            </div>
+            )}
         </div>
       </div>
     </div>
@@ -416,4 +459,10 @@ export default App;
     top: "50%",
     right: 0,
   },
+  checkBoxContainer: {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  }
  }

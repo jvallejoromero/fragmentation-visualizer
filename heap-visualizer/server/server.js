@@ -34,7 +34,7 @@ let snapshotCounter = 0;
 let sentSnapshots = 0;
 let lastPID = 0;
 
-const FRAME_MS = 150;
+const FRAME_MS = 50;
 
 // Watch for changes to heap_frag.log
 chokidar.watch(LOG_PATH, { awaitWriteFinish: true })
@@ -49,7 +49,8 @@ chokidar.watch(LOG_PATH, { awaitWriteFinish: true })
 
     // detect new process run
     console.log("From pid:", pid); 
-    if (pid !== null && lastPID != pid) {
+    if (pid && pid !== lastPID) {
+      lastPID = pid;
       sentSnapshots = 0;
       snapshotCounter = 0;
       prevState.clear();
@@ -68,11 +69,15 @@ chokidar.watch(LOG_PATH, { awaitWriteFinish: true })
     newSnaps.forEach((snap, i) => {
         // schedule each emit i*FRAME_MS ms in the future
         setTimeout(() => {
+          let coalesced = false;
           snapshotCounter += 1;
 
           // parse chunks
           const lines = snap.split('\n');
-          const chunks = lines.filter(line => !line.startsWith('&')).map(line => {
+          const chunks = lines.filter(line => {
+            if (line.startsWith('&coalesced')) coalesced = true;
+            return !line.startsWith('&');
+          }).map(line => {
             const [addr, size, alloc] = line.trim().split(/\s+/);
             return {addr, size: +size, allocated: +alloc === 1 };
           });
@@ -89,7 +94,8 @@ chokidar.watch(LOG_PATH, { awaitWriteFinish: true })
             prevState.set(addr, allocated);
           });
 
-          io.emit('snapshot', {pid: Number(pid), snapshotId: snapshotCounter, chunks});
+          console.log("coalesced=", coalesced)
+          io.emit('snapshot', {pid: Number(pid), snapshotId: snapshotCounter, chunks, coalesced});
           io.emit('syscalls', {pid: Number(pid), snapshotId: snapshotCounter, allocs, frees});
         }, (delayed ? i * FRAME_MS : 0));
       });
